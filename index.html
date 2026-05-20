@@ -253,7 +253,7 @@ body::after{
       <div class="ov-title">SNAKE</div>
       <div class="ov-gestures">
         ☝️ &nbsp;Point UP &nbsp;→&nbsp; Move up<br>
-        👋 &nbsp;Open palm &nbsp;→&nbsp; Move down<br>
+        👇 &nbsp;Point DOWN &nbsp;→&nbsp; Move down<br>
         👈 &nbsp;Point LEFT &nbsp;→&nbsp; Move left<br>
         👉 &nbsp;Point RIGHT &nbsp;→&nbsp; Move right<br>
         ✊ &nbsp;Fist &nbsp;→&nbsp; Pause / Resume
@@ -319,7 +319,7 @@ body::after{
     <div class="card">
       <div class="card-label">Controls</div>
       <div class="ctrl-row"><span class="ctrl-em">☝️</span><span class="ctrl-dir">↑</span><span>Point Up</span></div>
-      <div class="ctrl-row"><span class="ctrl-em">👋</span><span class="ctrl-dir">↓</span><span>Open palm (all fingers)</span></div>
+      <div class="ctrl-row"><span class="ctrl-em">👇</span><span class="ctrl-dir">↓</span><span>Point Down</span></div>
       <div class="ctrl-row"><span class="ctrl-em">👈</span><span class="ctrl-dir">←</span><span>Point Left</span></div>
       <div class="ctrl-row"><span class="ctrl-em">👉</span><span class="ctrl-dir">→</span><span>Point Right</span></div>
       <div class="ctrl-row"><span class="ctrl-em">✊</span><span class="ctrl-dir">⏸</span><span>Pause</span></div>
@@ -565,42 +565,23 @@ document.addEventListener("keydown",e=>{
 const CONNECTIONS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
 const TIPS=[4,8,12,16,20];
 
-function extUp(lm,tip,base){ return lm[tip].y < lm[base].y - 0.04; }
+function extended(lm,tip,base){ return lm[tip].y < lm[base].y-0.025; }
 
 function detect(lm){
-  const idx = extUp(lm,8,5);
-  const mid = extUp(lm,12,9);
-  const rng = extUp(lm,16,13);
-  const pnk = extUp(lm,20,17);
-
-  // FIST: all four fingers tightly curled
-  const idxC = lm[8].y > lm[5].y + 0.04;
-  const midC = lm[12].y > lm[9].y + 0.04;
-  const rngC = lm[16].y > lm[13].y + 0.04;
-  const pnkC = lm[20].y > lm[17].y + 0.04;
-  if(idxC && midC && rngC && pnkC) return "FIST";
-
-  // DOWN: 👋 open palm — all 4 fingers extended upward AND palm facing camera
-  // Key: all fingers up + wrist is lower than all fingertips (palm faces cam)
-  // Differentiate from UP (single finger): require ALL 4 extended
-  const allUp = idx && mid && rng && pnk;
-  if(allUp){
-    // Palm-facing-camera check: middle fingertip well above wrist
-    const palmFacing = lm[12].y < lm[0].y - 0.15;
-    if(palmFacing) return "DOWN";
-    return "OPEN";
+  const idx=extended(lm,8,5);
+  const mid=extended(lm,12,9);
+  const rng=extended(lm,16,13);
+  const pnk=extended(lm,20,17);
+  const count=[idx,mid,rng,pnk].filter(Boolean).length;
+  if(count===0) return "FIST";
+  if(count>=3) return "OPEN";
+  if(idx&&!mid){
+    const dx=lm[8].x-lm[5].x, dy=lm[8].y-lm[5].y;
+    const mag=Math.sqrt(dx*dx+dy*dy);
+    if(mag<0.04) return null;
+    if(Math.abs(dy)>Math.abs(dx)) return dy<0?"UP":"DOWN";
+    return dx<0?"RIGHT":"LEFT";
   }
-
-  // Single index: UP / LEFT / RIGHT
-  if(idx && !mid){
-    const dx = lm[8].x - lm[5].x;
-    const dy = lm[8].y - lm[5].y;
-    const mag = Math.sqrt(dx*dx+dy*dy);
-    if(mag < 0.05) return null;
-    if(Math.abs(dy) > Math.abs(dx)) return "UP";
-    return dx < 0 ? "RIGHT" : "LEFT";
-  }
-
   return null;
 }
 
@@ -635,7 +616,7 @@ function updateDir(d){
 
 const GD={
   UP:   {e:"☝️", n:"POINT UP",    d:"Move up"},
-  DOWN: {e:"👋", n:"OPEN PALM",  d:"All fingers up → Move down"},
+  DOWN: {e:"👇", n:"POINT DOWN",  d:"Move down"},
   LEFT: {e:"👈", n:"POINT LEFT",  d:"Move left"},
   RIGHT:{e:"👉", n:"POINT RIGHT", d:"Move right"},
   FIST: {e:"✊", n:"FIST",        d:"Pause / Resume"},
@@ -680,7 +661,7 @@ async function main(){
   setTimeout(()=>q("loading").classList.add("gone"),700);
 
   // direction buffer
-  let buf=[], pauseT=0, fistFrames=0;
+  let buf=[], pauseT=0;
 
   function camFrame(){
     const now=performance.now();
@@ -699,17 +680,14 @@ async function main(){
       if(d){
         updateDir(d); updateGest(d);
         if(d==="FIST"){
-          fistFrames++;
-          // require 10 consecutive fist frames (~333ms) AND 2.5s debounce
-          if(fistFrames >= 10 && now-pauseT > 2500){
-            pauseT=now; fistFrames=0;
+          if(now-pauseT>1000){
+            pauseT=now;
             if(gameState==="playing"){
               clearInterval(gameLoop);gameLoop=null;
               gameState="paused";show("screen-pause");
             } else if(gameState==="paused"){ resumeGame(); }
           }
         } else if(d!=="OPEN"){
-          fistFrames=0;
           buf.push(d); if(buf.length>4) buf.shift();
           const cnt={};buf.forEach(x=>cnt[x]=(cnt[x]||0)+1);
           const voted=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0][0];
@@ -719,7 +697,6 @@ async function main(){
         }
       }
     } else {
-      fistFrames=0;
       updateDir("");
       q("gest-emoji").textContent="—";
       q("gest-nm").textContent="NO HAND";
